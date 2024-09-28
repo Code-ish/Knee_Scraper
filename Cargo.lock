@@ -623,7 +623,7 @@ dependencies = [
 
 [[package]]
 name = "knee_scraper"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "fs",
  "futures 0.3.30",

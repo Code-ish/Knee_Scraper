@@ -16,36 +16,126 @@ To install the library, add the following to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-knee_scraper = "0.1.2"
+knee_scraper = "0.1.3"
+reqwest = "0.12.7"
+tokio = { version = "1.40.0", features = ["full", "fs"] }
+```
+## All inclusive run() function that calls all available features of the Crate 
+
+```rust 
+use knee_scraper::run;
+use reqwest::Client;
+use tokio::time::{sleep, Duration};
+
+#[tokio::main]
+async fn main() {
+    // Initialize the HTTP client
+    let client = Client::new();
+
+    // Define the URL to scrape
+    let url = "https://example.com";
+
+    // Call the run function from knee_scraper to execute the scraping workflow
+    println!("Starting the scraping process for {}", url);
+    run(url, &client).await;
+    println!("Scraping process completed for {}", url);
+
+    // Optional delay to simulate a more human-like browsing pattern
+    sleep(Duration::from_secs(2)).await;
+}
+```
+## run() Example2 - with vector of urls to start from 
+```rust
+use knee_scraper::run;
+use reqwest::Client;
+use tokio::time::{sleep, Duration};
+
+#[tokio::main]
+async fn main() {
+    // Initialize the HTTP client
+    let client = Client::new();
+
+    // Define a vector of URLs to scrape
+    let urls = vec![
+        "https://example.com",
+        "https://exampl3e.com",
+    ];
+
+    // Loop over each URL and call the `run` function
+    for &url in &urls {
+        println!("Starting the scraping process for {}", url);
+        run(url, &client).await;
+        println!("Scraping process completed for {}", url);
+
+        // Optional delay to simulate human-like behavior between scrapes
+        sleep(Duration::from_secs(2)).await;
+    }
+}
+
 ```
 
-## Basic Recursive Scraping Example
+## Basic Recursive Scraping Examples
 
 ```rust
-use knee_scraper::{Client, recursive_scrape};
+use knee_scraper::recursive_scrape;
 use std::collections::HashSet;
+use reqwest::Client;
+use tokio::time::{sleep, Duration};
 
 #[tokio::main]
 async fn main() {
     let client = Client::new(); // Initializing the HTTP client
     let mut visited = HashSet::new(); // To track visited URLs
 
+    let base_url = "https://example.com";
+    
+    //
     // Start recursive scraping from the given URL
-    recursive_scrape("https://example.com", &client, &mut visited).await;
+    //  Recursive scrape is a hand selected set of functions available
+    //   'knee-scraper::run;'  will be the easiest all inclusive  
+    recursive_scrape(base_url, &client, &mut visited).await;
+    
+    // Scrape2 utilizing the 'async fn extract_links()' 
+    recursive_scrape2(base_url, &client, &mut visited).await;
+
 }
 
-let html = "<a href='/about'>About Us</a>";
-let base_url = "https://example.com";
+async fn recursive_scrape2(url: &str, client: &Client, visited: &mut HashSet<String>) {
+    if visited.contains(url) {
+        return; // If the URL was already visited, skip it
+    }
 
-// Extract links from the HTML content
-let links = knee_scraper::extract_links(html, base_url);
+    visited.insert(url.to_string()); // Mark the URL as visited
+
+    // Fetch the HTML content from the current URL
+    let response = client.get(url).send().await.unwrap();
+
+    if response.status().is_success() {
+        let html = response.text().await.unwrap();
+
+        // Extract links from the HTML content
+        let links = knee_scraper::extract_links(&html, url);
+
+        println!("Scraped {} - Found {} links", url, links.len());
+
+        // Recursively scrape each extracted link
+        for link in links {
+            // Avoid re-scraping the same URLs
+            if !visited.contains(&link) {
+                recursive_scrape(&link, client, visited).await;
+                sleep(Duration::from_millis(500)).await; // Add a delay between requests to avoid overwhelming the server
+            }
+        }
+    }
+}
+
 ```
 
-## Advanced Example with Robots.txt, Open Directories, and Cookies
+## Example with Robots.txt, Open Directories, and Cookies
 
 ```toml
 [dependencies]
-knee_scraper = "0.1.2"
+knee_scraper = "0.1.3"
 futures = "0.3.30"
 rand = "0.8.5"
 regex = "1.10.6"
@@ -60,8 +150,8 @@ url = "2.5.2"
 use knee_scraper::{recursive_scrape, fetch_robots_txt, check_open_directories, fetch_with_cookies};
 use reqwest::Client;
 use std::collections::HashSet;
-use tokio::time::sleep;
-use std::time::Duration;
+use tokio::time::{sleep, Duration};
+
 
 #[tokio::main]
 async fn main() {
@@ -96,3 +186,22 @@ async fn main() {
 
     println!("Scraping complete.");
 }
+
+
+```toml
+[dependencies]
+knee_scraper = "0.1.3"
+futures = "0.3.30"
+rand = "0.8.5"
+regex = "1.10.6"
+reqwest = "0.12.7"
+scraper = "0.20.0"
+tokio = { version = "1.40.0", features = ["full", "fs"] }
+url = "2.5.2"
+
+```
+
+```rust
+
+
+```

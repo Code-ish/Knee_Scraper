@@ -503,15 +503,20 @@ pub async fn fetch_robots_txt(url: &str, client: &Client) {
     }
 }
 
-/// Runs the scraping tasks in order, including fetching robots.txt, checking open directories, fetching with cookies, and recursive scraping.
+/// Executes the entire scraping workflow for the provided URL, including:
+/// - Fetching `robots.txt` to check for disallowed paths
+/// - Checking for open directories
+/// - Fetching content with cookies
+/// - Performing recursive scraping on links found in the website
+///
+/// The function mimics human behavior by introducing random delays
+/// between requests to avoid overwhelming servers.
 ///
 /// # Arguments
-///
 /// * `url` - The URL to start scraping from.
 /// * `client` - A reference to a `reqwest::Client` for making HTTP requests.
 ///
 /// # Example
-///
 /// ```
 /// let client = Client::new();
 /// run("https://example.com", &client).await;
@@ -519,15 +524,22 @@ pub async fn fetch_robots_txt(url: &str, client: &Client) {
 pub async fn run(url: &str, client: &Client) {
     let mut visited = HashSet::new();
 
-    // Fetch robots.txt, open directories, cookies, and then scrape the website
+    println!("Starting scraping workflow for {}", url);
+
+    // Fetch `robots.txt`, open directories, and perform cookie-based scraping
     fetch_robots_txt(url, client).await;
     check_open_directories(url, client).await;
     fetch_with_cookies(url, client).await;
+
+    // Start recursive scraping from the base URL
     recursive_scrape(url, client, &mut visited).await;
 
-    // Delay to mimic human behavior
-    sleep(Duration::from_secs(3)).await;
+    // Introduce a delay to mimic human-like browsing behavior
+    random_delay(2, 5).await;
+
+    println!("Scraping workflow completed for {}", url);
 }
+
 
 use std::fs::OpenOptions;
 /// Logs an error message to a file.
