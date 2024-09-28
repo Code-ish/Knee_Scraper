@@ -6,7 +6,7 @@ authors = ["Tom Plesha <info-leakerz@proton.me>"]
 description = "A Rust web scraper for recursively scraping web pages and downloading media."
 repository = "https://github.com/Code-ish/Knee_Scraper"
 homepage = "https://github.com/Code-ish/Knee_Scraper"
-
+edition = "2021" 
 
 
 [dependencies]
