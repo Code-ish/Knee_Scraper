@@ -7,6 +7,7 @@ description = "A Rust web scraper for recursively scraping web pages and downloa
 repository = "https://github.com/Code-ish/Knee_Scraper"
 homepage = "https://github.com/Code-ish/Knee_Scraper"
 edition = "2021" 
+license = "MIT"
 
 
 [dependencies]
