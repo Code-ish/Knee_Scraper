@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Scraping Library Documentation</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Web Scraping Library</h1>
+        <p>Efficient and scalable web scraping for Rust applications.</p>
+    </header>
+
+    <section>
+        <h2>Introduction</h2>
+        <p>This library allows users to perform recursive web scraping, media downloading, and content extraction from web pages with minimal configuration. The library supports HTML parsing, media extraction, and error logging.</p>
+    </section>
+
+    <section>
+        <h2>Installation</h2>
+        <p>To add this library to your project, include the following in your <code>Cargo.toml</code>:</p>
+        <pre><code>[dependencies]
+web_scraper = "0.1.0"</code></pre>
+    </section>
+
+    <section>
+        <h2>Usage</h2>
+        <p>Below is a minimal example for scraping a website:</p>
+        <pre><code>use web_scraper::{Client, recursive_scrape};
+use std::collections::HashSet;
+
+#[tokio::main]
+async fn main() {
+    let client = Client::new();
+    let mut visited = HashSet::new();
+    recursive_scrape("https://example.com", &client, &mut visited).await;
+}</code></pre>
+    </section>
+
+    <footer>
+        <p>© 2024 Web Scraping Library</p>
+    </footer>
+</body>
+</html>

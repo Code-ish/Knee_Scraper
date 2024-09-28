@@ -1,0 +1,30 @@
+#[tokio::main]
+async fn main() {
+    let client = Client::new();
+    let mut visited = HashSet::new();
+    let config = ScraperConfig {
+        follow_links: true,
+        max_depth: 3,
+        user_agent: Some("CustomScraper/1.0".to_string()),
+    };
+
+    let custom_scrape = |html: &str| Box::pin(async move {
+        // Custom scraping logic: Extracting paragraphs and logging them
+        let paragraphs = extract_paragraphs(html);
+        println!("Paragraphs: {:?}", paragraphs);
+    });
+
+    recursive_scrape_with_config("https://example.com", &client, &mut visited, &config, custom_scrape, 0).await;
+}
+
+fn extract_paragraphs(html: &str) -> Vec<String> {
+    let document = scraper::Html::parse_document(html);
+    let paragraph_selector = scraper::Selector::parse("p").unwrap();
+    let mut paragraphs = Vec::new();
+
+    for paragraph in document.select(&paragraph_selector) {
+        paragraphs.push(paragraph.inner_html());
+    }
+
+    paragraphs
+}
