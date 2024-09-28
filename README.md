@@ -16,7 +16,7 @@ To install the library, add the following to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-knee_scraper = "0.1.0"
+knee_scraper = "0.1.2"
 ```
 
 ## Basic Recursive Scraping Example
@@ -45,7 +45,7 @@ let links = knee_scraper::extract_links(html, base_url);
 
 ```toml
 [dependencies]
-knee_scraper = "0.1.0"
+knee_scraper = "0.1.2"
 futures = "0.3.30"
 rand = "0.8.5"
 regex = "1.10.6"
