@@ -16,7 +16,7 @@ To install the library, add the following to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-knee_scraper ="0.1.6"
+knee_scraper "0.1.7"
 reqwest = "0.12.7"
 tokio = { version = "1.40.0", features = ["full", "fs"] }
 ```
@@ -86,28 +86,35 @@ async fn main() {
     let client = Client::new();
 
     // Set your target_phrase ((Target phrase not found? Scraper will discontinue scraping in that direction.))
-    let target_phrase = "Advanced AI algorithm";
+    let target_phrase = "algo";
 
     // Set your URL ((Don't forget to use a valid URL!))
-    let url = "https://www.futuristic-technology.com/";
-
+    let url = "https://www.technology.com/";
+    
     // Initialize the hashset for visited URL storage
     let mut visited = HashSet::new();
 
     // Initialize the ScraperConfig with your default settings
-    let config = Some(ScraperConfig::new(
+    let mut config = Some(ScraperConfig::new(
         true,                                   // follow_links: true
         3,                                      // max_depth: 3
         Some("Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X)...".to_string()),  // user_agent
     ));
 
     // 'Update Logic' -> Should you require these settings change upon condition
-    config.as_ref().map(|cfg| {
+    config.as_mut().map(|cfg| {
         cfg.set_follow_links(false);
         cfg.set_max_depth(5);
         cfg.set_user_agent(Some(
             "UpdatedScraper/2.0 (My new updated user agent, brain: CPU Unlimited learning like a Turing machine)...".to_string(),
         ));
+    });
+
+    // Print the updated settings...
+    config.as_mut().map(|cfg| {
+        println!("Updated follow links: {}", cfg.follow_links());
+        println!("Updated max depth: {}", cfg.max_depth());
+        println!("User agent: {:?}", cfg.user_agent());
     });
 
     // Call rec_scrape() and specify config as reference with the as_ref() function.
@@ -120,8 +127,25 @@ async fn main() {
     // Define a list of keywords to search for in the JavaScript content.
     let js_keywords = vec!["apiKey", "token", "secret"];
 
-    // Scrape JS content for the specified keywords
-    scrape_js_content(&url, &client, &js_keywords).await;
+    // Fetch the HTML content for the `scrape_js_content` function.
+    let html_content = match client.get(url).send().await {
+        Ok(response) => match response.text().await {
+            Ok(text) => text,
+            Err(_) => {
+                eprintln!("Failed to get HTML content from the response");
+                return;
+            }
+        },
+        Err(_) => {
+            eprintln!("Failed to send request");
+            return;
+        }
+    };
+
+// Call scrape_js_content with the correct arguments
+scrape_js_content(&html_content, &url, &client, &js_keywords).await;
+    // If you want a terminal output of completed tasks
+    println!("Scraping process completed for {}", url);
 
     // Optional delay to simulate a more human-like browsing pattern
     sleep(Duration::from_secs(2)).await;
@@ -219,7 +243,7 @@ async fn recursive_scrape2(url: &str, client: &Client, visited: &mut HashSet<Str
 
 ```toml
 [dependencies]
-knee_scraper = "0.1.6"
+knee_scraper = "0.1.7"
 futures = "0.3.30"
 rand = "0.8.5"
 regex = "1.10.6"
