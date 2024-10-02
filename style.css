@@ -1,13 +1,13 @@
 body {
     font-family: Arial, sans-serif;
-    background-color: #f4f4f4;
-    color: #333;
+    background-color: #374c5f;
+    color: #9a0a90;
     line-height: 1.6;
 }
 
 header {
     background: #333;
-    color: #fff;
+    color: #9a0a90;
     padding: 10px 0;
     text-align: center;
 }
@@ -20,13 +20,13 @@ h1 {
 section {
     margin: 20px;
     padding: 20px;
-    background: #fff;
+    background: #3054a1;
     border-radius: 8px;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
 }
 
 pre {
-    background: #f4f4f4;
+    background: #3054a1;
     padding: 15px;
     border-radius: 8px;
     overflow: auto;

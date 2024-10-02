@@ -16,15 +16,16 @@ To install the library, add the following to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-knee_scraper = "0.1.3"
+knee_scraper = "0.1.4"
 reqwest = "0.12.7"
 tokio = { version = "1.40.0", features = ["full", "fs"] }
 ```
-## All inclusive run() function that calls all available features of the Crate 
+## Scrape based on 'keyword search' with => "knee_scraper::rec_scrape;" + new configuration options => "knee_scraper::ScraperConfig;"  
 
 ```rust 
-use knee_scraper::run;
-use reqwest::Client;
+use knee_scraper::{ run, ScraperConfig };
+use reqwest::{Client, header};
+use std::collections::{HashSet, VecDeque};
 use tokio::time::{sleep, Duration};
 
 #[tokio::main]
@@ -32,19 +33,102 @@ async fn main() {
     // Initialize the HTTP client
     let client = Client::new();
 
-    // Define the URL to scrape
-    let url = "https://example.com";
+    // Set your target_phrase  ((Target phrase not found?  Scraper will discontinue scraping in that direction.))
+    let target_phrase = "Hardcore computer-science porn";
 
-    // Call the run function from knee_scraper to execute the scraping workflow
-    println!("Starting the scraping process for {}", url);
-    run(url, &client).await;
+    // Set your URL  (( Mine has a 'z' where it shouldn't, whoops i guess i'm clumsy ))
+    let url = "httpz://www.happythoughts.com/";
+    
+    // Initialize the hashset for visited url storage 
+    let mut visited = HashSet::new();
+    
+    // Initialize the ScraperConfig with your default settings
+    let config = Some(ScraperConfig::new(
+        true,                                   // follow_links: true
+        3,                                      // max_depth: 3
+        Some("Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X)...".to_string()),  // user_agent
+    ));
+
+    // 'Update Logic' -> Should you require these settings change upon condition
+    config.set_follow_links(false);
+    config.set_max_depth(5);
+    config.set_user_agent(Some("UpdatedScraper/2.0(My new updated user agent, brain: CPU Unlimmited learning like a turing machine)...".to_string()));     
+
+    // Print the updated settings...
+    println!("Updated follow links: {}", config.follow_links());
+    println!("Updated max depth: {}", config.max_depth());
+    println!("User agent: {:?}", config.user_agent());
+
+
+    // Call rec_scrape() and specify config as reference with the as_ref() function.
+    rec_scrape(&url, &client, config.as_ref(), &mut visited, target_phrase).await;
+    // Without "Config", specify the "None".
+    // rec_scrape(&url, &client, None, &mut visited, target_phrase).await;
+ 
+    // If you want a terminal output of completed tasks
     println!("Scraping process completed for {}", url);
 
     // Optional delay to simulate a more human-like browsing pattern
     sleep(Duration::from_secs(2)).await;
 }
 ```
-## run() Example2 - with vector of urls to start from 
+
+## Scrape with scrape_js_content() for APIkey or products and/or w/e
+```rust  
+use knee_scraper::{rec_scrape, scrape_js_content, ScraperConfig};
+use reqwest::{Client};
+use std::collections::HashSet;
+use tokio::time::{sleep, Duration};
+
+#[tokio::main]
+async fn main() {
+    // Initialize the HTTP client
+    let client = Client::new();
+
+    // Set your target_phrase ((Target phrase not found? Scraper will discontinue scraping in that direction.))
+    let target_phrase = "Advanced AI algorithm";
+
+    // Set your URL ((Don't forget to use a valid URL!))
+    let url = "https://www.futuristic-technology.com/";
+
+    // Initialize the hashset for visited URL storage
+    let mut visited = HashSet::new();
+
+    // Initialize the ScraperConfig with your default settings
+    let config = Some(ScraperConfig::new(
+        true,                                   // follow_links: true
+        3,                                      // max_depth: 3
+        Some("Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X)...".to_string()),  // user_agent
+    ));
+
+    // 'Update Logic' -> Should you require these settings change upon condition
+    config.as_ref().map(|cfg| {
+        cfg.set_follow_links(false);
+        cfg.set_max_depth(5);
+        cfg.set_user_agent(Some(
+            "UpdatedScraper/2.0 (My new updated user agent, brain: CPU Unlimited learning like a Turing machine)...".to_string(),
+        ));
+    });
+
+    // Call rec_scrape() and specify config as reference with the as_ref() function.
+    rec_scrape(&url, &client, config.as_ref(), &mut visited, target_phrase).await;
+
+    // Without "Config", specify the "None".
+    // rec_scrape(&url, &client, None, &mut visited, target_phrase).await;
+
+    // **Now use `scrape_js_content` to extract JavaScript data**:
+    // Define a list of keywords to search for in the JavaScript content.
+    let js_keywords = vec!["apiKey", "token", "secret"];
+
+    // Scrape JS content for the specified keywords
+    scrape_js_content(&url, &client, &js_keywords).await;
+
+    // Optional delay to simulate a more human-like browsing pattern
+    sleep(Duration::from_secs(2)).await;
+}
+```
+
+## run() Example - with vector of urls to start from 
 ```rust
 use knee_scraper::run;
 use reqwest::Client;
@@ -135,7 +219,7 @@ async fn recursive_scrape2(url: &str, client: &Client, visited: &mut HashSet<Str
 
 ```toml
 [dependencies]
-knee_scraper = "0.1.3"
+knee_scraper = "0.1.4"
 futures = "0.3.30"
 rand = "0.8.5"
 regex = "1.10.6"
@@ -187,21 +271,3 @@ async fn main() {
     println!("Scraping complete.");
 }
 
-
-```toml
-[dependencies]
-knee_scraper = "0.1.3"
-futures = "0.3.30"
-rand = "0.8.5"
-regex = "1.10.6"
-reqwest = "0.12.7"
-scraper = "0.20.0"
-tokio = { version = "1.40.0", features = ["full", "fs"] }
-url = "2.5.2"
-
-```
-
-```rust
-
-
-```

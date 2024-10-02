@@ -1,9 +1,9 @@
 // src/lib.rs
 
-use reqwest::{Client, Url};
-use scraper::{Html, Selector};
-use std::collections::HashSet;
-use std::fs::{create_dir_all, File};
+use reqwest::{ Client, Url, header };
+use scraper::{ Html, Selector };
+use std::collections::{ HashSet, VecDeque };
+use std::fs::{ create_dir_all, File };
 use std::io::Write;
 use std::path::Path;
 
@@ -73,7 +73,7 @@ pub fn recursive_scrape<'a>(
                     Ok(html) => {
                         println!("Scraping: {}", url);
                         scrape_content(&html, url, client).await;
-                        scrape_js_content(&html);
+                        scrape_js(&html);
                         scrape_for_errors(&html);
                         
                         let links = extract_links(&html, url);
@@ -364,7 +364,7 @@ pub fn extract_domain(url: &str) -> String {
 /// ```
 /// scrape_js_content("<script>var apiKey = '12345';</script>");
 /// ```
-pub fn scrape_js_content(html: &str) {
+pub fn scrape_js(html: &str) {
     let document = Html::parse_document(html);
     let script_selector = Selector::parse("script").unwrap();
 
@@ -586,6 +586,199 @@ pub async fn random_delay(min_secs: u64, max_secs: u64) {
     let delay = rand::random::<u64>() % (max_secs - min_secs + 1) + min_secs;
     sleep(Duration::from_secs(delay)).await;
 }
+
+
+/// Recursively scrapes web pages starting from the given URL, looking for the target phrase.
+/// If the target phrase is not found in the HTML content of a page, it stops scraping in that direction.
+///
+/// # Arguments
+/// * `url`: The starting URL for scraping.
+/// * `client`: An instance of `reqwest::Client` for making HTTP requests.
+/// * `config`: An optional reference to `ScraperConfig` for controlling scraper behavior.
+/// * `visited`: A `HashSet` that tracks visited URLs.
+/// * `target_phrase`: The phrase to search for in the HTML content.
+///
+/// This function performs breadth-first scraping, but only continues to follow links
+/// if the target phrase is found in the current page's content.
+async fn rec_scrape(url: &str, client: &Client, config: Option<&ScraperConfig>, visited: &mut HashSet<String>, target_phrase: &str) {
+    let mut queue = VecDeque::new();
+    queue.push_back(url.to_string());
+    let mut current_depth = 0; // Initialize scraping depth
+
+    // Get configuration values or defaults
+    let follow_links = config.map_or(true, |c| c.follow_links()); // Default: true
+    let max_depth = config.map_or(3, |c| c.max_depth()); // Default: 3
+    let user_agent = config.and_then(|c| c.user_agent().cloned()); // Default: None (no user agent)
+
+    while let Some(current_url) = queue.pop_front() {
+        if visited.contains(&current_url) {
+            continue;
+        }
+
+        println!("Visiting: {}", current_url);
+        visited.insert(current_url.clone());
+
+        // Build the request with optional user agent
+        let mut request = client.get(&current_url);
+        if let Some(ref agent) = user_agent {
+            request = request.header(header::USER_AGENT, agent);
+        }
+
+        let response = match request.send().await {
+            Ok(response) => response,
+            Err(_) => continue, // Skip the URL if there's an error
+        };
+
+        if response.status().is_success() {
+            let html = match response.text().await {
+                Ok(html) => html,
+                Err(_) => continue, // Skip if there's an error reading the content
+            };
+
+            if should_scrape_content(&html, target_phrase) {
+                println!("Target phrase found in: {}", current_url);
+
+                // Only follow links if target_phrase is found and depth is within limits
+                if follow_links && current_depth < max_depth {
+                    let links = extract_links(&html, &current_url);
+                    for link in links {
+                        if !visited.contains(&link) {
+                            queue.push_back(link); // Only add links if the phrase is found
+                        }
+                    }
+                    current_depth += 1; // Increase depth after following links
+                }
+            } else {
+                println!("Target phrase not found in: {}", current_url);
+                // Do not enqueue links from this page, discontinue following in this direction
+                continue;
+            }
+        }
+    }
+}
+
+/// Checks if the given content contains the target phrase.
+///
+/// # Arguments
+/// * `content`: The HTML content of the page as a string.
+/// * `target_phrase`: The phrase to search for within the content.
+///
+/// Returns `true` if the target phrase is found, otherwise `false`.
+fn should_scrape_content(content: &str, target_phrase: &str) -> bool {
+    content.contains(target_phrase)
+}
+
+struct ScraperConfig {
+    follow_links: bool,
+    max_depth: i32,
+    user_agent: Option<String>,
+}
+
+impl ScraperConfig {
+    pub fn new(follow_links: bool, max_depth: i32, user_agent: Option<String>) -> Self {
+        ScraperConfig {
+            follow_links,
+            max_depth,
+            user_agent,
+        }
+    }
+
+    // Method to update whether or not to follow links
+    pub fn set_follow_links(&mut self, follow: bool) {
+        self.follow_links = follow;
+    }
+
+    // Method to update the max depth of scraping
+    pub fn set_max_depth(&mut self, depth: i32) {
+        self.max_depth = depth;
+    }
+
+    // Method to set a custom user agent
+    pub fn set_user_agent(&mut self, agent: Option<String>) {
+        self.user_agent = agent;
+    }
+
+    pub fn follow_links(&self) -> bool {
+        self.follow_links
+    }
+
+    pub fn max_depth(&self) -> i32 {
+        self.max_depth
+    }
+
+    pub fn user_agent(&self) -> Option<&String> {
+        self.user_agent.as_ref()
+    }
+}
+
+
+pub async fn scrape_js_content(html: &str, url: &str, client: &Client, keywords: &[&str]) {
+    let document = Html::parse_document(html);
+    let script_selector = Selector::parse("script").unwrap();
+
+    for script in document.select(&script_selector) {
+        // Check for inline JavaScript (within the HTML)
+        let script_content = script.inner_html();
+        if !script_content.is_empty() {
+            // Check for user-defined keywords in inline scripts
+            for &keyword in keywords {
+                if script_content.contains(keyword) {
+                    println!("Found '{}' in inline JS: {}", keyword, script_content);
+                }
+            }
+        }
+
+        // Check if the script tag has a `src` attribute (external JS file)
+        if let Some(src) = script.value().attr("src") {
+            let js_url = normalize_link(src, url);
+
+            // Fetch and download the JS file
+            match client.get(&js_url).send().await {
+                Ok(response) => {
+                    if response.status().is_success() {
+                        if let Ok(js_content) = response.text().await {
+                            // Process the JS file content for user-defined keywords
+                            for &keyword in keywords {
+                                if js_content.contains(keyword) {
+                                    println!("Found '{}' in external JS: {}", keyword, js_content);
+                                }
+                            }
+
+                            // Optionally, save the JS content to a file
+                            let file_name = js_url.split('/').last().unwrap_or("script.js").to_string();
+                            let file_path = format!("./scraped_js/{}", file_name);
+                            if let Err(e) = save_js_file(&file_path, &js_content) {
+                                eprintln!("Failed to save JS file '{}': {}", file_path, e);
+                            }
+                        }
+                    } else {
+                        eprintln!("Failed to download JS file from '{}': Status code {}", js_url, response.status());
+                    }
+                }
+                Err(e) => eprintln!("Error fetching JS file '{}': {}", js_url, e),
+            }
+        }
+    }
+}
+
+/// Save the JavaScript content to a file.
+///
+/// # Arguments
+///
+/// * `file_path` - The file path where the JS content will be saved.
+/// * `js_content` - The JavaScript content to save.
+///
+/// # Returns
+///
+/// A `Result<(), std::io::Error>` indicating success or failure.
+fn save_js_file(file_path: &str, js_content: &str) -> Result<(), std::io::Error> {
+    let mut file = File::create(file_path)?;
+    file.write_all(js_content.as_bytes())?;
+    println!("Saved JS file to '{}'", file_path);
+    Ok(())
+}
+
+
 
 
 #[cfg(test)]
