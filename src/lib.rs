@@ -600,7 +600,7 @@ pub async fn random_delay(min_secs: u64, max_secs: u64) {
 ///
 /// This function performs breadth-first scraping, but only continues to follow links
 /// if the target phrase is found in the current page's content.
-async fn rec_scrape(url: &str, client: &Client, config: Option<&ScraperConfig>, visited: &mut HashSet<String>, target_phrase: &str) {
+pub async fn rec_scrape(url: &str, client: &Client, config: Option<&ScraperConfig>, visited: &mut HashSet<String>, target_phrase: &str) {
     let mut queue = VecDeque::new();
     queue.push_back(url.to_string());
     let mut current_depth = 0; // Initialize scraping depth
@@ -664,11 +664,11 @@ async fn rec_scrape(url: &str, client: &Client, config: Option<&ScraperConfig>, 
 /// * `target_phrase`: The phrase to search for within the content.
 ///
 /// Returns `true` if the target phrase is found, otherwise `false`.
-fn should_scrape_content(content: &str, target_phrase: &str) -> bool {
+pub fn should_scrape_content(content: &str, target_phrase: &str) -> bool {
     content.contains(target_phrase)
 }
 
-struct ScraperConfig {
+pub struct ScraperConfig {
     follow_links: bool,
     max_depth: i32,
     user_agent: Option<String>,

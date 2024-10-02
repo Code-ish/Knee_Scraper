@@ -16,7 +16,7 @@ To install the library, add the following to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-knee_scraper = "0.1.5"
+knee_scraper ="0.1.6"
 reqwest = "0.12.7"
 tokio = { version = "1.40.0", features = ["full", "fs"] }
 ```
@@ -219,7 +219,7 @@ async fn recursive_scrape2(url: &str, client: &Client, visited: &mut HashSet<Str
 
 ```toml
 [dependencies]
-knee_scraper = "0.1.5"
+knee_scraper = "0.1.6"
 futures = "0.3.30"
 rand = "0.8.5"
 regex = "1.10.6"
