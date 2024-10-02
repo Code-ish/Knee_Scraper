@@ -3,7 +3,7 @@
 name = "knee_scraper"
 version = "0.1.4"
 authors = ["Black2ooth <info-leakerz@proton.me>"]
-description = "A Rust web scraper for recursively scraping web pages and downloading media."
+description = "A Rust web scraper for recursively scraping web pages and downloading media, optionaly based on keywords or phrases."
 repository = "https://github.com/Code-ish/Knee_Scraper"
 homepage = "https://github.com/Code-ish/Knee_Scraper"
 edition = "2021" 
