@@ -23,7 +23,7 @@ tokio = { version = "1.40.0", features = ["full", "fs"] }
 ## Scrape based on 'keyword search' with => "knee_scraper::rec_scrape;" + new configuration options => "knee_scraper::ScraperConfig;"  
 
 ```rust 
-use knee_scraper::{ run, ScraperConfig };
+use knee_scraper::{ run, ScraperConfig, rec_scrape };
 use reqwest::{Client, header};
 use std::collections::{HashSet, VecDeque};
 use tokio::time::{sleep, Duration};
