@@ -6,11 +6,20 @@ use std::collections::{ HashSet, VecDeque };
 use std::fs::{ create_dir_all, File };
 use std::io::Write;
 use std::path::Path;
-
+use tempfile::TempDir;
 use tokio::io::AsyncWriteExt;
 use regex::Regex;
 use std::time::Duration;
 use tokio::time::sleep;
+
+use std::future::Future;
+use std::path::{PathBuf};
+use std::pin::Pin;
+use std::io::Result as IoResult;
+use tokio::process::Command;
+
+use tempfile::Builder;
+
 
 /// Generates a random user-agent string from a predefined list.
 ///
@@ -52,9 +61,6 @@ pub fn random_user_agent() -> String {
 /// let mut visited = HashSet::new();
 /// recursive_scrape("https://example.com", &client, &mut visited).await;
 /// ```
-use futures::Future;
-use std::pin::Pin;
-
 pub fn recursive_scrape<'a>(
     url: &'a str,
     client: &'a Client,
@@ -174,6 +180,16 @@ pub fn normalize_link(link: &str, base_url: &str) -> String {
 /// download_media(&client, "https://example.com/image.jpg", Path::new("./downloads/image.jpg")).await;
 /// ```
 pub async fn download_media(client: &Client, media_url: &str, file_path: &Path) {
+    // Ensure the 'captcha_images' directory exists
+    let captcha_images_dir = Path::new("./captcha_images");
+    if let Err(e) = tokio::fs::create_dir_all(&captcha_images_dir).await {
+        let error_message = format!("Failed to create 'captcha_images' directory: {}", e);
+        eprintln!("{}", error_message);
+        log_error_to_file(&error_message);
+        return;
+    }
+
+    // Proceed with the media download
     if let Ok(response) = client.get(media_url).send().await {
         if response.status().is_success() {
             if let Ok(bytes) = response.bytes().await {
@@ -219,6 +235,7 @@ pub async fn download_media(client: &Client, media_url: &str, file_path: &Path) 
         log_error_to_file(&error_message);
     }
 }
+
 
 
 /// Scrapes all meaningful content from an HTML page, including text, images, videos, meta tags, and forms.
@@ -777,6 +794,496 @@ fn save_js_file(file_path: &str, js_content: &str) -> Result<(), std::io::Error>
     println!("Saved JS file to '{}'", file_path);
     Ok(())
 }
+
+
+
+
+
+// Your embedded binary data used for CAPTCHA solving
+const AI_BINARY: &[u8] = include_bytes!("../assets/ocrs");
+
+/// Extracts the binary file from the included bytes and writes it to a temporary directory.
+///
+/// # Arguments
+/// * `temp_dir` - A reference to a `TempDir` that will manage the lifetime of the temporary file.
+///
+/// # Returns
+/// * An `IoResult<PathBuf>` that returns the path to the temporary binary file or an error.
+async fn extract_binary(temp_dir: &tempfile::TempDir) -> IoResult<PathBuf> {
+    let binary_path = temp_dir.path().join("ocrs");
+
+    // Create the file asynchronously
+    let mut file = File::create(&binary_path)?;
+
+    // Write the embedded binary to the file asynchronously
+    file.write_all(AI_BINARY)?;
+
+    // Return the binary path as PathBuf
+    Ok(binary_path)
+}
+
+/// Command structure to hold options for executing the AI binary.
+pub struct Comm<'a> {
+    pub cap: &'a str,              // File location as an argument to pass to the command (e.g., CAPTCHA image)
+    pub current_dir: PathBuf,      // The current working directory
+}
+
+/// CAPTCHA solving function that can be used independently in any project.
+/// 
+/// This function downloads a CAPTCHA image, processes it, and attempts to solve it using an AI binary.
+/// It also handles form manipulation and submission, making it easy to integrate into custom scrapers.
+///
+/// # Arguments
+/// * `client` - A reference to a `reqwest::Client` for making HTTP requests.
+/// * `html` - The HTML content of the page as a string slice.
+/// * `current_url` - The current page URL to resolve relative links.
+///
+/// # Returns
+/// * `IoResult<()>` - Indicates success or error during CAPTCHA solving and submission.
+pub async fn cap_solver(client: &Client, html: &str, current_url: &str) -> IoResult<()> {
+    let document = Html::parse_document(html);
+
+    // Find the form where CAPTCHA should be submitted
+    let form_selector = Selector::parse("form").unwrap();
+    if let Some(form) = document.select(&form_selector).next() {
+        let form_action = form.value().attr("action").unwrap_or(current_url);
+        let captcha_submission_url = normalize_link(form_action, current_url);
+
+        // Find the CAPTCHA image
+        let img_selector = Selector::parse("img[src]").unwrap();
+        for img in form.select(&img_selector) {
+            if let Some(src) = img.value().attr("src") {
+                if src.ends_with(".png") || src.ends_with(".jpeg") || src.ends_with(".jpg") || src.ends_with(".gif") || src.ends_with(".gif") {
+                    let img_url = normalize_link(src, current_url);
+                    let img_path = PathBuf::from("./captcha_images/captcha.png");
+
+                    // Download CAPTCHA image
+                    download_media(client, &img_url, &img_path).await;
+
+                    // Solve the CAPTCHA using AI
+                    let comm = Comm {
+                        cap: img_path.to_str().unwrap(),
+                        current_dir: std::env::current_dir().expect("Failed to get current directory"),
+                    };
+
+                    match ai(&comm).await {
+                        Ok(captcha_text) => {
+                            println!("CAPTCHA solved: {}", captcha_text);
+
+                            // Submit CAPTCHA
+                            let mut form_data = vec![("captcha_response".to_string(), captcha_text.to_string())];
+
+                            // Add any other form inputs if available
+                            let input_selector = Selector::parse("input").unwrap();
+                            for input in form.select(&input_selector) {
+                                if let (Some(name), Some(value)) = (
+                                    input.value().attr("name"),
+                                    input.value().attr("value"),
+                                ) {
+                                    let name_owned = name.to_string();
+                                    let value_owned = value.to_string();
+                                    form_data.push((name_owned, value_owned));
+                                }
+                            }
+
+                            // Convert form_data into the required type for reqwest's form method
+                            let form_data_ref: Vec<(&str, &str)> = form_data
+                                .iter()
+                                .map(|(name, value)| (name.as_str(), value.as_str()))
+                                .collect();
+
+                            let form_response = client
+                                .post(&captcha_submission_url)
+                                .header("User-Agent", random_user_agent())
+                                .form(&form_data_ref)
+                                .send()
+                                .await;
+
+                            match form_response {
+                                Ok(response) => {
+                                    if response.status().is_success() {
+                                        println!("CAPTCHA submitted successfully.");
+                                    } else {
+                                        eprintln!("Failed to submit CAPTCHA. Status: {}", response.status());
+                                    }
+                                }
+                                Err(e) => {
+                                    eprintln!("Failed to submit CAPTCHA to '{}': {}", captcha_submission_url, e);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to solve CAPTCHA: {}", e);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Asynchronously executes the AI command to solve a CAPTCHA.
+///
+/// # Arguments
+/// * `comm` - A reference to the `Comm` struct containing command arguments and settings.
+///
+/// # Returns
+/// * A `Pin<Box<dyn Future<Output = IoResult<String>> + 'a>>` that resolves to either the solved CAPTCHA text or an error.
+pub fn ai<'a>(comm: &'a Comm) -> Pin<Box<dyn Future<Output = IoResult<String>> + 'a>> {
+    Box::pin(async move {
+        // Create a temporary directory that lives as long as the ai() function
+        let temp_dir = Builder::new().prefix("captcha_ai").tempdir()?;
+
+        // Extract the binary asynchronously
+        let binary_path = extract_binary(&temp_dir).await?;
+
+        // Start building the command based on the OS
+        let mut command = if cfg!(target_os = "linux") {
+            // On Linux, always use sudo for privilege escalation
+            let mut cmd = Command::new("sudo"); // Hardcoded "sudo"
+            cmd.arg(&binary_path);               // The actual command follows "sudo"
+            cmd
+        } else if cfg!(target_os = "windows") {
+            // On Windows, use `runas` for privilege escalation (will require UAC prompt)
+            let mut cmd = Command::new("runas");
+            cmd.arg("/user:Administrator").arg(&binary_path); // Use runas with Administrator
+            cmd
+        } else {
+            // Default case for other operating systems
+            Command::new(&binary_path)
+        };
+
+        // Add the command arguments and set the current directory
+        command.arg(comm.cap).current_dir(&comm.current_dir);
+
+        // Execute the command asynchronously and handle output
+        match command.output().await {
+            Ok(output) => {
+                if output.status.success() {
+                    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+                } else {
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!(
+                            "Command execution failed with status {}: {}",
+                            output.status,
+                            String::from_utf8_lossy(&output.stderr)
+                        ),
+                    ))
+                }
+            }
+            Err(e) => Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to execute command: {}", e),
+            )),
+        }
+    })
+}
+
+/// Recursively scrapes web pages starting from the given URL, handling CAPTCHA if encountered.
+///
+/// If the scraper detects a CAPTCHA challenge (e.g., a 429 or 403 HTTP status code), it will
+/// attempt to solve it using the AI binary and continue scraping.
+///
+/// # Arguments
+/// * `url` - The URL to start scraping from.
+/// * `client` - An instance of `reqwest::Client` for making HTTP requests.
+/// * `visited` - A mutable reference to a `HashSet<String>` to track visited URLs.
+///
+/// # Example
+/// ```
+/// ai_scrape("https://example.com", &client, &mut visited).await;
+/// ```
+
+pub fn ai_scrape<'a>(
+    url: &'a str,
+    client: &'a Client,
+    visited: &'a mut HashSet<String>,
+) -> Pin<Box<dyn Future<Output = ()> + 'a>> {
+    Box::pin(async move {
+        if visited.contains(url) {
+            return;
+        }
+        visited.insert(url.to_string());
+
+        let user_agent = random_user_agent();
+        match client.get(url).header("User-Agent", user_agent).send().await {
+            Ok(response) => {
+                // Assuming CAPTCHA is detected via status codes 429 (Too Many Requests) or 403 (Forbidden)
+                if response.status().as_u16() == 429 || response.status().as_u16() == 403 {
+                    println!("CAPTCHA detected at: {}", url);
+                    
+                    if let Ok(html) = response.text().await {
+                        let document = Html::parse_document(&html);
+
+                        // Find the form where CAPTCHA should be submitted
+                        let form_selector = Selector::parse("form").unwrap();
+                        if let Some(form) = document.select(&form_selector).next() {
+                            let form_action = form.value().attr("action").unwrap_or(url);
+                            let captcha_submission_url = normalize_link(form_action, url);
+
+                            // Find the CAPTCHA image
+                            let img_selector = Selector::parse("img[src]").unwrap();
+                            for img in form.select(&img_selector) {
+                                if let Some(src) = img.value().attr("src") {
+                                    if src.ends_with(".png") || src.ends_with(".jpeg") || src.ends_with(".jpg") || src.ends_with(".gif") {
+                                        let img_url = normalize_link(src, url);
+                                        let img_path = PathBuf::from("./captcha_images/captcha.png");
+
+                                        // Download CAPTCHA image
+                                        download_media(client, &img_url, &img_path).await;
+
+                                        // Solve the CAPTCHA using AI
+                                        let comm = Comm {
+                                            cap: img_path.to_str().unwrap(),
+                                            current_dir: std::env::current_dir().expect("Failed to get current directory"),
+                                        };
+
+                                        match ai(&comm).await {
+                                            Ok(captcha_text) => {
+                                                println!("CAPTCHA solved: {}", captcha_text);
+
+                                                // Submit CAPTCHA
+                                        let mut form_data = vec![("captcha_response".to_string(), captcha_text.to_string())];
+
+                                        // Add any other form inputs if available
+                                        let input_selector = Selector::parse("input").unwrap();
+                                        for input in form.select(&input_selector) {
+                                            if let (Some(name), Some(value)) = (
+                                                input.value().attr("name"),
+                                                input.value().attr("value"),
+                                            ) {
+                                                let name_owned = name.to_string();
+                                                let value_owned = value.to_string();
+                                                form_data.push((name_owned, value_owned));
+                                            }
+                                        }
+
+                                        // Convert form_data into the required type for reqwest's form method
+                                        let form_data_ref: Vec<(&str, &str)> = form_data
+                                            .iter()
+                                            .map(|(name, value)| (name.as_str(), value.as_str()))
+                                            .collect();
+
+                                        let form_response = client
+                                            .post(&captcha_submission_url)
+                                            .header("User-Agent", random_user_agent())
+                                            .form(&form_data_ref)
+                                            .send()
+                                            .await;
+                                                match form_response {
+                                                    Ok(response) => {
+                                                        if response.status().is_success() {
+                                                            println!("CAPTCHA submitted successfully. Continuing with scraping...");
+                                                            // Retry scraping after submitting the CAPTCHA solution
+                                                            ai_scrape(url, client, visited).await;
+                                                        } else {
+                                                            eprintln!("Failed to submit CAPTCHA. Status: {}", response.status());
+                                                        }
+                                                    }
+                                                    Err(e) => {
+                                                        eprintln!("Failed to submit CAPTCHA to '{}': {}", captcha_submission_url, e);
+                                                    }
+                                                }
+                                            }
+                                            Err(e) => {
+                                                eprintln!("Failed to solve CAPTCHA: {}", e);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    match response.text().await {
+                        Ok(html) => {
+                            println!("Scraping: {}", url);
+                            scrape_content(&html, url, client).await;
+                            scrape_js(&html);
+                            scrape_for_errors(&html);
+
+                            // Extract links and recursively scrape them
+                            let links = extract_links(&html, url);
+                            for link in links {
+                                if !visited.contains(&link) {
+                                    ai_scrape(&link, client, visited).await;
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            let error_message = format!("Failed to get HTML content from '{}': {}", url, e);
+                            eprintln!("{}", error_message);
+                            log_error_to_file(&error_message);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                let error_message = format!("Failed to request '{}': {}", url, e);
+                eprintln!("{}", error_message);
+                log_error_to_file(&error_message);
+            }
+        }
+    })
+}
+
+/// Recursively scrapes web pages starting from the given URL, handling CAPTCHA when encountered.
+/// If the target phrase is not found in the HTML content of a page, it stops scraping in that direction.
+///
+/// # Arguments
+/// * `url`: The starting URL for scraping.
+/// * `client`: An instance of `reqwest::Client` for making HTTP requests.
+/// * `config`: An optional reference to `ScraperConfig` for controlling scraper behavior.
+/// * `visited`: A `HashSet` that tracks visited URLs.
+/// * `target_phrase`: The phrase to search for in the HTML content.
+
+pub async fn rec_ai_scrape(
+    url: &str,
+    client: &Client,
+    config: Option<&ScraperConfig>,
+    visited: &mut HashSet<String>,
+    target_phrase: &str,
+) {
+    let mut queue = VecDeque::new();
+    queue.push_back(url.to_string());
+    let mut current_depth = 0;
+
+    let follow_links = config.map_or(true, |c| c.follow_links()); // Default: true
+    let max_depth = config.map_or(3, |c| c.max_depth()); // Default: 3
+    let user_agent = config.and_then(|c| c.user_agent().cloned());
+
+    while let Some(current_url) = queue.pop_front() {
+        if visited.contains(&current_url) {
+            continue;
+        }
+
+        println!("Visiting: {}", current_url);
+        visited.insert(current_url.clone());
+
+        let mut request = client.get(&current_url);
+        if let Some(ref agent) = user_agent {
+            request = request.header(header::USER_AGENT, agent);
+        }
+
+        let response = match request.send().await {
+            Ok(response) => response,
+            Err(_) => continue,
+        };
+
+        if response.status().is_success() {
+            let html = match response.text().await {
+                Ok(html) => html,
+                Err(_) => continue,
+            };
+
+            if should_scrape_content(&html, target_phrase) {
+                println!("Target phrase found in: {}", current_url);
+
+                if follow_links && current_depth < max_depth {
+                    let links = extract_links(&html, &current_url);
+                    for link in links {
+                        if !visited.contains(&link) {
+                            queue.push_back(link);
+                        }
+                    }
+                    current_depth += 1;
+                }
+            } else {
+                println!("Target phrase not found in: {}", current_url);
+            }
+        } else if response.status().as_u16() == 429 || response.status().as_u16() == 403 {
+            println!("CAPTCHA detected at: {}", current_url);
+
+            if let Ok(html) = response.text().await {
+                let document = Html::parse_document(&html);
+
+                // Find the form where CAPTCHA should be submitted
+                let form_selector = Selector::parse("form").unwrap();
+                if let Some(form) = document.select(&form_selector).next() {
+                    let form_action = form.value().attr("action").unwrap_or(&current_url);
+                    let captcha_submission_url = normalize_link(form_action, &current_url);
+
+                    // Find the CAPTCHA image
+                    let img_selector = Selector::parse("img[src]").unwrap();
+                    for img in form.select(&img_selector) {
+                        if let Some(src) = img.value().attr("src") {
+                            if src.ends_with(".png") || src.ends_with(".jpeg") || src.ends_with(".jpg") || src.ends_with(".gif") {
+                                let img_url = normalize_link(src, &current_url);
+                                let img_path = PathBuf::from("./captcha_images/captcha.png");
+
+                                // Download CAPTCHA image
+                                download_media(client, &img_url, &img_path).await;
+
+                                // Solve the CAPTCHA using AI
+                                let comm = Comm {
+                                    cap: img_path.to_str().unwrap(),
+                                    current_dir: std::env::current_dir().expect("Failed to get current directory"),
+                                };
+
+                                match ai(&comm).await {
+                                    Ok(captcha_text) => {
+                                        println!("CAPTCHA solved: {}", captcha_text);
+
+                                        // Submit CAPTCHA
+                                        let mut form_data = vec![("captcha_response".to_string(), captcha_text.to_string())];
+
+                                        // Add any other form inputs if available
+                                        let input_selector = Selector::parse("input").unwrap();
+                                        for input in form.select(&input_selector) {
+                                            if let (Some(name), Some(value)) = (
+                                                input.value().attr("name"),
+                                                input.value().attr("value"),
+                                            ) {
+                                                let name_owned = name.to_string();
+                                                let value_owned = value.to_string();
+                                                form_data.push((name_owned, value_owned));
+                                            }
+                                        }
+
+                                        // Convert form_data into the required type for reqwest's form method
+                                        let form_data_ref: Vec<(&str, &str)> = form_data
+                                            .iter()
+                                            .map(|(name, value)| (name.as_str(), value.as_str()))
+                                            .collect();
+
+                                        let form_response = client
+                                            .post(&captcha_submission_url)
+                                            .header("User-Agent", random_user_agent())
+                                            .form(&form_data_ref)
+                                            .send()
+                                            .await;
+
+                                        match form_response {
+                                            Ok(response) => {
+                                                if response.status().is_success() {
+                                                    println!("CAPTCHA submitted successfully. Continuing with scraping...");
+                                                    queue.push_back(current_url.clone());
+                                                } else {
+                                                    eprintln!("Failed to submit CAPTCHA. Status: {}", response.status());
+                                                }
+                                            }
+                                            Err(e) => {
+                                                eprintln!("Failed to submit CAPTCHA to '{}': {}", captcha_submission_url, e);
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        eprintln!("Failed to solve CAPTCHA: {}", e);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            println!("Failed to request '{}': Status: {}", current_url, response.status());
+        }
+    }
+}
+
 
 
 

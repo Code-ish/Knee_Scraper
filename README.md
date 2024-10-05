@@ -1,6 +1,6 @@
 # Web Scraping Library
 
-This Rust library enables recursive web scraping, media downloading, and content extraction from websites. With robust error handling and media support, the library is designed for flexible and scalable use in various web scraping scenarios.
+Recursive web scraping, media downloading, and content extraction from websites. Including CAPTCHA solving capability via AI (solves simple captch's).
 
 ## Features
 
@@ -16,7 +16,7 @@ To install the library, add the following to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-knee_scraper "0.1.7"
+knee_scraper "0.1.8"
 reqwest = "0.12.7"
 tokio = { version = "1.40.0", features = ["full", "fs"] }
 ```
@@ -166,7 +166,7 @@ async fn main() {
     // Define a vector of URLs to scrape
     let urls = vec![
         "https://example.com",
-        "https://exampl3e.com",
+        "https://example2.com",
     ];
 
     // Loop over each URL and call the `run` function
@@ -239,20 +239,7 @@ async fn recursive_scrape2(url: &str, client: &Client, visited: &mut HashSet<Str
 
 ```
 
-## Example with Robots.txt, Open Directories, and Cookies
-
-```toml
-[dependencies]
-knee_scraper = "0.1.7"
-futures = "0.3.30"
-rand = "0.8.5"
-regex = "1.10.6"
-reqwest = "0.12.7"
-scraper = "0.20.0"
-tokio = { version = "1.40.0", features = ["full", "fs"] }
-url = "2.5.2"
-
-```
+# With Robots txt & fetch cookies
 
 ```rust
 use knee_scraper::{recursive_scrape, fetch_robots_txt, check_open_directories, fetch_with_cookies};
@@ -294,4 +281,24 @@ async fn main() {
 
     println!("Scraping complete.");
 }
+```
+# Recursively scrape the content of a website while handling CAPTCHA
+
+```rust
+use std::collections::HashSet;
+use reqwest::Client;
+
+#[tokio::main]
+async fn main() {
+    let client = Client::new();
+    let mut visited = HashSet::new();
+    let target_phrase = "example phrase to find";
+
+    // Starting URL to scrape
+    let url = "https://example.com";
+
+    // Perform recursive scraping with CAPTCHA handling
+    rec_ai_scrape(url, &client, None, &mut visited, target_phrase).await;
+}
+```
 

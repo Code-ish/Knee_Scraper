@@ -1,9 +1,9 @@
 
 [package]
 name = "knee_scraper"
-version = "0.1.7"
+version = "0.1.8"
 authors = ["Black2ooth <info-leakerz@proton.me>"]
-description = "A Rust web scraper for recursively scraping web pages and downloading media, optionaly based on keywords or phrases. It also parses js content for keywords"
+description = "Recursive scraping & downloading media, optionaly on word/phrase. 'AI CAPTCHA Solving', and Parses js content for keywords."
 repository = "https://github.com/Code-ish/Knee_Scraper"
 homepage = "https://github.com/Code-ish/Knee_Scraper"
 edition = "2021" 
@@ -12,10 +12,12 @@ license = "MIT"
 
 [dependencies]
 fs = "0.0.5"
-futures = "0.3.30"
+futures = "0.3.31"
 rand = "0.8.5"
 regex = "1.11.0"
 reqwest = "0.12.8"
 scraper = "0.20.0"
+tempfile = "3.13.0"
 tokio = { version = "1.40.0", features = ["full", "fs"] }
 url = "2.5.2"
+
